@@ -1,7 +1,6 @@
 sd = require("sides")
 sc = component.geolyzer
 rb = component.robot
-Dance()
 function Dance()
   rb.turn(true)
   rb.turn(true)
@@ -16,3 +15,4 @@ function Dance()
   rb.turn(true)
   rb.turn(true)
 end
+Dance()
