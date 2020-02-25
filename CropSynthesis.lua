@@ -2,8 +2,7 @@ sd = require("sides")
 sc = component.geolyzer
 rb = component.robot
 Dance()
-func Dance()
-do
+function Dance()
   rb.turn(true)
   rb.turn(true)
   rb.move(sd.front)
