@@ -1,27 +1,48 @@
 component = require("component")
+comp = require("computer")
 sides = require("sides")
 inv = component.inventory_controller
 g = component.geolyzer
 r = component.robot
+
 currentPos = {}
+bannedSlots = {}
 cropName = "?"
 fieldLength = 11
 fieldCenter = (fieldLength + 1) / 2
 s = {up = 0, right = 1, down = 2, left = 3}
 currentDir = s.up
+timeSleep = 5
+timeCharge = 20
 itemInHand = ""
 field = {}
 sampleStats = {20, 31, 0}
 
 function ColorChange(event)
   if event == "error" then r.setLightColor(0xFF0000)
-  elseif event == "scan" then r.setLightColor(0x0000FF) end
+  elseif event == "scan" then r.setLightColor(0x0000FF)
+  elseif event == "care" then r.setLightColor(0x00FF00)
+  elseif event == "idle" then r.setLightColor(0xFFFFFF) end
+end
+
+function IsDelta(i, j)
+  return tonumber(field[i][j]) and true or false
+end
+
+function IsValidPlace(i, j)
+  count = 0
+  if i > 1 and IsDelta(i - 1 , j) then count = count + 1 end
+  if i < fieldLength and IsDelta(i + 1, j) then count = count + 1 end
+  if j > 1 and IsDelta(i , j - 1) then count = count + 1 end
+  if j < fieldLength and IsDelta(i, j + 1) then count = count + 1 end
+  return count >= 2 and true or false
 end
 
 function TryMove(side)
   for i = 1, 10 do
     if r.move(side) then
-      if currentDir == s.up then currentPos.y = currentPos.y - 1
+      if side == sides.top or side == sides.bottom then
+      elseif currentDir == s.up then currentPos.y = currentPos.y - 1
       elseif currentDir == s.down then currentPos.y = currentPos.y + 1
       elseif currentDir == s.left then currentPos.x = currentPos.x - 1
       else currentPos.x = currentPos.x + 1 end
@@ -55,7 +76,7 @@ function MoveTo(x, y)
 end
 
 function Panic()
-
+  os.exit()
 end 
 
 function EquipItem(item)
@@ -68,12 +89,46 @@ function EquipItem(item)
         r.select(i) inv.equip() itemInHand = item return end
       if item == "sticks" and itemName == "IC2:blockCrop" then
         r.select(i) inv.equip() itemInHand = item return end
+      if item == "spade" and itemName == "berriespp:itemSpade" then
+        r.select(i) inv.equip() itemInHand = item return end
     end
   end
   print("Missing in inventory: " .. item)
   ColorChange("error")
   Panic()
   os.exit()
+end
+function PlaceNewCrop(delta)
+  for j = 1, fieldLength do
+    for i = j % 2 == 0 and 2 or 1, fieldLength, 2 do
+      if field[i][j] == "empty" then
+        MoveTo(i, j)
+        EquipItem("sticks")
+        r.use(sides.bottom)
+        EquipItem("seed")
+        r.use(sides.bottom)
+        field[i][j] = delta
+      end
+    end
+  end
+end
+
+function PlaceNewSticks()
+  for j = 1, fieldLength do
+    for i = 1, fieldLength do
+      if IsValidPlace(i, j) then
+        MoveTo(i, j)
+        EquipItem("sticks")
+        if r.use(sides.bottom) then r.use(sides.bottom) field[i][j] = "sticks" end
+      end
+    end
+  end
+end
+
+function PlaceUnbanned(delta)
+  for i = , do
+    PlaceNewCrop(delta)
+  end
 end
 
 function ProcessWeed()
@@ -82,6 +137,14 @@ function ProcessWeed()
   EquipItem("sticks")
   r.use(sides.bottom)
   return "sticks"
+end
+
+function ProcessSeedbag(delta)
+  EquipItem("spade")
+  r.use(sides.bottom)
+  EquipItem("sticks")
+  r.use(sides.bottom)
+  PlaceUnbanned(delta)
 end
 
 function ProcessAnotherSeedbag()
@@ -110,7 +173,7 @@ end
 
 function ScanField()
   ColorChange("scan")
-  for j = 1, fieldLength do
+  for j = 1, fieldLength/3 do
     for i = (j % 2 == 0 and fieldLength or 1),
             (j % 2 == 0 and 1 or fieldLength),
             (j % 2 == 0 and -1 or 1) do
@@ -122,7 +185,7 @@ function ScanField()
       print(field[i][j])
     end
   end
-  MoveTo(fieldCenter, fieldCenter)
+  PlaceNewSticks()
 end
 
 function Initialize()
@@ -131,8 +194,45 @@ function Initialize()
   currentPos.x = fieldCenter
 end
 
+function Charge()
+  if comp.energy() / comp.maxEnergy() < 0.2 then
+    MoveTo(fieldCenter, fieldCenter)
+    TryMove(sides.bottom)
+    TryMove(sides.bottom)
+    os.sleep(timeCharge)
+    TryMove(sides.up)
+    TryMove(sides.up)
+    if comp.energy() / comp.maxEnergy() < 0.9 then
+      print("Cant charge!")
+      ColorChange("error")
+      Panic()
+    end
+  end
+end
+
+function CheckCrops()
+ColorChange("care")
+  for j = 1, fieldLength do
+    for i = (j % 2 == 0 and fieldLength or 1),
+            (j % 2 == 0 and 1 or fieldLength),
+            (j % 2 == 0 and -1 or 1) do
+      if field[i][j] == "sticks" then
+        MoveTo(i, j)
+        newBlock = tonumber(ProcessBlock())
+        if newBlock then ProcessSeedbag(newBlock) end
+      end
+    end
+  end
+end
+
 function Main()
   Initialize()
   ScanField()
+  while true do
+    CheckCrops()
+    ColorChange("idle")
+    Charge()
+    os.sleep(timeSleep)
+  end
 end
 Main()
