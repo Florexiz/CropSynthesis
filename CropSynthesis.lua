@@ -6,12 +6,14 @@ g = component.geolyzer
 r = component.robot
 
 currentPos = {}
-bannedSlots = {}
 cropName = "?"
 fieldLength = 11
 fieldCenter = (fieldLength + 1) / 2
 s = {up = 0, right = 1, down = 2, left = 3}
 currentDir = s.up
+plantCount = 0
+avgDelta = 1000
+mode = "spread"
 timeSleep = 5
 timeCharge = 20
 itemInHand = ""
@@ -30,6 +32,7 @@ function IsDelta(i, j)
 end
 
 function IsValidPlace(i, j)
+  if field[i][j] ~= "empty" then return false end
   count = 0
   if i > 1 and IsDelta(i - 1 , j) then count = count + 1 end
   if i < fieldLength and IsDelta(i + 1, j) then count = count + 1 end
@@ -98,18 +101,42 @@ function EquipItem(item)
   Panic()
   os.exit()
 end
-function PlaceNewCrop(delta)
+
+function PlaceNewCrop(delta, slot)
   for j = 1, fieldLength do
     for i = j % 2 == 0 and 2 or 1, fieldLength, 2 do
       if field[i][j] == "empty" then
         MoveTo(i, j)
         EquipItem("sticks")
         r.use(sides.bottom)
-        EquipItem("seed")
-        r.use(sides.bottom)
+        r.select(slot)
+        r.place(sides.bottom)
         field[i][j] = delta
+        return
+      end
+      mode = "fill"
+    end
+  end
+end
+
+function IncreaseStats(delta, i)
+  maxDelta = {x = 0, y = 0, delta = 0}
+  for j = 1, fieldLength do
+    for i = 1, fieldLength do
+      if IsDelta(i, j) and field[i][j] > maxDelta.delta then
+        maxDelta.delta = field[i][j]
+        maxDelta.x = i
+        mфxDelta.y = j
       end
     end
+  end
+  r.select(i)
+  if delta < maxDelta.delta then
+    MoveTo(maxDelta.x, maxDelta.y)
+    r.place(sides.bottom)
+    field[i][j] = delta
+  else
+    r.drop(sides.bottom)
   end
 end
 
@@ -122,12 +149,6 @@ function PlaceNewSticks()
         if r.use(sides.bottom) then r.use(sides.bottom) field[i][j] = "sticks" end
       end
     end
-  end
-end
-
-function PlaceUnbanned(delta)
-  for i = , do
-    PlaceNewCrop(delta)
   end
 end
 
@@ -144,11 +165,46 @@ function ProcessSeedbag(delta)
   r.use(sides.bottom)
   EquipItem("sticks")
   r.use(sides.bottom)
-  PlaceUnbanned(delta)
+  for i = 1, r.inventorySize() do
+    itemName = inv.getStackInInternalSlot(i)
+    if itemName ~= nil then
+      itemName = itemName.name
+      if itemName == "IC2:itemCropSeed" then
+        if plantCount < fieldLength then
+          PlaceNewCrop(delta, i)
+          plantCount = plantCount + 1
+        else
+          IncreaseStats(delta, i)
+        end
+      end
+    end
+  end
+  PlaceNewSticks()
 end
 
 function ProcessAnotherSeedbag()
-  return "seedbag"
+  EquipItem("spade")
+  r.use(sides.bottom)
+  EquipItem("sticks")
+  r.use(sides.bottom)
+  for i = 1, r.inventorySize() do
+    itemName = inv.getStackInInternalSlot(i)
+    if itemName ~= nil then
+      itemName = itemName.name
+      if itemName == "IC2:itemCropSeed" then
+        MoveTo(fieldCenter, fieldCenter)
+        r.select(i)
+        for j = 1, inv.getInventorySize(sides.up) do
+          if inv.dropIntoSlot(sides.up, j) then break end
+          if j == inv.getInventorySize(sides.up) then
+            print("No free space in chest")
+            ColorChange("error")
+            Panic()
+          end
+        end
+      end
+    end
+  end
 end
 
 function CalculateDelta(scan)
@@ -182,7 +238,7 @@ function ScanField()
          j >= fieldCenter - 1 and j <= fieldCenter + 1 then
         field[i][j] = "center"
       else field[i][j] = ProcessBlock() end
-      print(field[i][j])
+      if IsDelta(i, j) then plantCount = plantCount + 1 end
     end
   end
   PlaceNewSticks()
