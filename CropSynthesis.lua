@@ -11,13 +11,17 @@ fieldLength = 11
 fieldCenter = (fieldLength + 1) / 2
 s = {up = 0, right = 1, down = 2, left = 3}
 currentDir = s.up
+checksForScanLeft = 20
 plantCount = 0
+mode = "stats"
 avgDelta = 1000
-mode = "spread"
 timeSleep = 5
 timeCharge = 20
 itemInHand = ""
+itemCount = 0
 field = {}
+seedToPlant = {}
+seedToPlantSize = 0
 sampleStats = {20, 31, 0}
 
 function ColorChange(event)
@@ -79,21 +83,33 @@ function MoveTo(x, y)
 end
 
 function Panic()
+  print("Removing empty sticks")
+  for j = 1, fieldLength do
+    for i = 1, fieldLength do
+      if field[i][j] == "sticks" then
+        MoveTo(i, j)
+        r.swing(sides.bottom)
+      end
+    end
+  end
   os.exit()
 end 
 
 function EquipItem(item)
-  if item == itemInHand then return end
+  if itemInHand == item or (item == "sticks" and itemCount > 1) then return end
   for i = 1, r.inventorySize() do
     itemName = inv.getStackInInternalSlot(i)
     if itemName ~= nil then
       itemName = itemName.name
-      if item == "trowel" and itemName == "IC2:itemWeedingTrowel" then
-        r.select(i) inv.equip() itemInHand = item return end
       if item == "sticks" and itemName == "IC2:blockCrop" then
-        r.select(i) inv.equip() itemInHand = item return end
+        r.select(i)
+        itemCount = r.count()
+        inv.equip()
+        itemInHand = item
+        return
+      end
       if item == "spade" and itemName == "berriespp:itemSpade" then
-        r.select(i) inv.equip() itemInHand = item return end
+        r.select(i) itemCount = -1 inv.equip() itemInHand = item return end
     end
   end
   print("Missing in inventory: " .. item)
@@ -102,42 +118,89 @@ function EquipItem(item)
   os.exit()
 end
 
-function PlaceNewCrop(delta, slot)
-  for j = 1, fieldLength do
-    for i = j % 2 == 0 and 2 or 1, fieldLength, 2 do
-      if field[i][j] == "empty" then
-        MoveTo(i, j)
-        EquipItem("sticks")
-        r.use(sides.bottom)
-        r.select(slot)
-        r.place(sides.bottom)
-        field[i][j] = delta
-        return
-      end
-      mode = "fill"
-    end
-  end
+function PlaceSticksDown()
+  if itemCount <= 1 then EquipItem("sticks") end
+  r.use(sides.bottom)
+  itemCount = itemCount - 1
 end
 
-function IncreaseStats(delta, i)
+function CalculateAvgDelta()
+  sum = 0
+  for j = 1, fieldLength do
+    for i = 1, fieldLength do
+      if IsDelta(i, j) then sum = sum + field[i][j] end
+    end
+  end
+  avgDelta = sum / plantCount
+  print("New average delta: ".. avgDelta)
+end
+
+function IncreaseStats(delta, s)
   maxDelta = {x = 0, y = 0, delta = 0}
   for j = 1, fieldLength do
     for i = 1, fieldLength do
       if IsDelta(i, j) and field[i][j] > maxDelta.delta then
         maxDelta.delta = field[i][j]
         maxDelta.x = i
-        mфxDelta.y = j
+        maxDelta.y = j
       end
     end
   end
-  r.select(i)
   if delta < maxDelta.delta then
+    for i = 1, r.inventorySize() do
+      itemName = inv.getStackInInternalSlot(i)
+      if itemName ~= nil then
+        itemName = itemName.name
+        if itemName == "IC2:itemCropSeed" then
+          seedToPlant[seedToPlantSize + 1] = i
+          seedToPlantSize = seedToPlantSize + 1
+        end
+      end
+    end
     MoveTo(maxDelta.x, maxDelta.y)
+    r.swing(sides.bottom)
+    PlaceSticksDown()
+    for i = 1, r.inventorySize() do
+      itemName = inv.getStackInInternalSlot(i)
+      if itemName ~= nil then
+        itemName = itemName.name
+        if itemName == "IC2:itemCropSeed" then
+          isWrong = true
+          for j = 1, seedToPlantSize do
+            if seedToPlant[j] == i then isWrong = false end
+          end
+          if isWrong then r.select(i) r.drop(sides.bottom) end
+        end
+      end
+    end
+    r.select(s)
     r.place(sides.bottom)
-    field[i][j] = delta
+    field[maxDelta.x][maxDelta.y] = delta
+    CalculateAvgDelta()
+    if avgDelta < 2 then mode = "spread" end
   else
+    r.select(s)
     r.drop(sides.bottom)
   end
+end
+
+function PlaceNewCrop(delta, slot)
+  for j = 1, mode == "stats" and 3 or fieldLength do
+    for i = j % 2 == 1 and 2 or 1, mode == "stats" and 3 or fieldLength, 2 do
+      if field[i][j] == "empty" then
+        MoveTo(i, j)
+        PlaceSticksDown()
+        r.select(slot)
+        r.place(sides.bottom)
+        field[i][j] = delta
+        plantCount = plantCount + 1
+        CalculateAvgDelta()
+        return
+      end
+    end
+  end
+  if mode == "spread" then mode = "fill" end
+  if mode == "stats" or mode == "fill" then IncreaseStats(delta, slot) end
 end
 
 function PlaceNewSticks()
@@ -145,53 +208,48 @@ function PlaceNewSticks()
     for i = 1, fieldLength do
       if IsValidPlace(i, j) then
         MoveTo(i, j)
-        EquipItem("sticks")
-        if r.use(sides.bottom) then r.use(sides.bottom) field[i][j] = "sticks" end
+        PlaceSticksDown()
+        field[i][j] = "sticks"
+        PlaceSticksDown()
       end
     end
   end
 end
 
 function ProcessWeed()
-  EquipItem("trowel")
+  EquipItem("spade")
   r.use(sides.bottom)
-  EquipItem("sticks")
-  r.use(sides.bottom)
+  PlaceSticksDown()
   return "sticks"
 end
 
-function ProcessSeedbag(delta)
+function ProcessSeedbag(delta, place)
+  if mode == "fill" and delta < 2 then  
+    return delta
+  end
   EquipItem("spade")
   r.use(sides.bottom)
-  EquipItem("sticks")
-  r.use(sides.bottom)
+  if place then PlaceSticksDown() end
   for i = 1, r.inventorySize() do
     itemName = inv.getStackInInternalSlot(i)
     if itemName ~= nil then
       itemName = itemName.name
       if itemName == "IC2:itemCropSeed" then
-        if plantCount < fieldLength then
-          PlaceNewCrop(delta, i)
-          plantCount = plantCount + 1
-        else
-          IncreaseStats(delta, i)
-        end
+        PlaceNewCrop(delta, i)
       end
     end
   end
-  PlaceNewSticks()
+  if place then PlaceNewSticks() end
+  return "sticks"
 end
 
-function ProcessAnotherSeedbag()
-  EquipItem("spade")
-  r.use(sides.bottom)
-  EquipItem("sticks")
-  r.use(sides.bottom)
+function DropToChest()
   for i = 1, r.inventorySize() do
     itemName = inv.getStackInInternalSlot(i)
     if itemName ~= nil then
       itemName = itemName.name
-      if itemName == "IC2:itemCropSeed" then
+      if itemName ~= "berriespp:itemSpade" and
+         itemName ~= "IC2:blockCrop" then
         MoveTo(fieldCenter, fieldCenter)
         r.select(i)
         for j = 1, inv.getInventorySize(sides.up) do
@@ -207,11 +265,19 @@ function ProcessAnotherSeedbag()
   end
 end
 
+function ProcessAnotherSeedbag()
+  EquipItem("spade")
+  r.use(sides.bottom)
+  PlaceSticksDown()
+  DropToChest()
+  return "sticks"
+end
+
 function CalculateDelta(scan)
-  delta = scan["crop:growth"] - sampleStats[1] + 
-          scan["crop:gain"] - sampleStats[2] + 
-          scan["crop:resistance"] - sampleStats[3]
-  return math.abs(delta)
+  delta = math.abs(scan["crop:growth"] - sampleStats[1]) + 
+          math.abs(scan["crop:gain"] - sampleStats[2]) + 
+          math.abs(scan["crop:resistance"] - sampleStats[3])
+  return delta
 end
 
 function ProcessBlock()
@@ -229,6 +295,7 @@ end
 
 function ScanField()
   ColorChange("scan")
+  plantCount = 0
   for j = 1, fieldLength/3 do
     for i = (j % 2 == 0 and fieldLength or 1),
             (j % 2 == 0 and 1 or fieldLength),
@@ -237,10 +304,20 @@ function ScanField()
       if i >= fieldCenter - 1 and i <= fieldCenter + 1 and
          j >= fieldCenter - 1 and j <= fieldCenter + 1 then
         field[i][j] = "center"
-      else field[i][j] = ProcessBlock() end
+      else
+        field[i][j] = ProcessBlock()
+        if IsDelta(i, j) and (i + j) % 2 == 0 and mode ~= "fill" then
+          ProcessSeedbag(field[i][j], false)
+          MoveTo(i, j)
+          r.swing(sides.bottom)
+          field[i][j] = "empty"
+        end 
+      end
       if IsDelta(i, j) then plantCount = plantCount + 1 end
     end
   end
+  print("Scan complete")
+  CalculateAvgDelta()
   PlaceNewSticks()
 end
 
@@ -267,7 +344,7 @@ function Charge()
 end
 
 function CheckCrops()
-ColorChange("care")
+  ColorChange("care")
   for j = 1, fieldLength do
     for i = (j % 2 == 0 and fieldLength or 1),
             (j % 2 == 0 and 1 or fieldLength),
@@ -275,10 +352,15 @@ ColorChange("care")
       if field[i][j] == "sticks" then
         MoveTo(i, j)
         newBlock = tonumber(ProcessBlock())
-        if newBlock then ProcessSeedbag(newBlock) end
+        if newBlock then field[i][j] = ProcessSeedbag(newBlock, true) end
       end
     end
   end
+  if checksForScanLeft == 0 then
+    checksForScanLeft = 20
+    DropToChest()
+    ScanField()
+  else checksForScanLeft = checksForScanLeft - 1 end
 end
 
 function Main()
