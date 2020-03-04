@@ -7,8 +7,8 @@ local currentPos = {}
 local currentDir = sides.up
 
 local function Initialize()
-  currentPos.x = (fieldLength + 1) / 2
-  currentPos.y = (fieldLength + 1) / 2
+  currentPos.x = fieldCenter
+  currentPos.y = fieldCenter
 end
 
 local function Rotate(side)
