@@ -1,0 +1,13 @@
+maxStage = 3
+maxDelta = 2
+fieldLength = 11
+fieldCenter = (fieldLength + 1) / 2
+currentPos = {}
+field = {}
+sampleStats = {20, 31, 5}
+plantName = "?"
+plantCount = 0
+avgDelta = 1000
+itemInHand = ""
+sticksCount = -1
+timeCharge = 15
