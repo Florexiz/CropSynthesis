@@ -3,7 +3,7 @@ local function GetMaxStage()
   repeat
     input = io.read()
   until tonumber(input) and tonumber(input) > 1
-  return input
+  return tonumber(input)
 end
 
 local function Initialize()
